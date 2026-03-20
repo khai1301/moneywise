@@ -1,213 +1,175 @@
 'use client';
+import { useState, useEffect } from 'react';
+import dynamic from 'next/dynamic';
 import AppLayout from '@/components/layout/AppLayout';
-import {
-  monthlyData, dailySpends, getCategorySpending,
-  getSummary, formatCurrency
-} from '@/lib/fakeData';
-import {
-  AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, Tooltip,
-  ResponsiveContainer, XAxis, YAxis, CartesianGrid, Legend
-} from 'recharts';
-import { Brain, TrendingUp, TrendingDown, Flame, PiggyBank } from 'lucide-react';
+import { TrendingUp, TrendingDown, PiggyBank, Loader2 } from 'lucide-react';
+import api from '@/lib/axios';
+import { useRouter } from 'next/navigation';
 
-const summary = getSummary();
-const categoryData = getCategorySpending();
+// Dynamically import charts to avoid Turbopack SSR panic with Recharts
+const AreaChartComponent = dynamic(
+  () => import('./charts').then(m => m.AreaChartComponent),
+  { ssr: false, loading: () => <ChartLoader h={280} /> }
+);
+const DonutChart = dynamic(
+  () => import('./charts').then(m => m.DonutChart),
+  { ssr: false, loading: () => <ChartLoader h={200} /> }
+);
+const SavingsBarChart = dynamic(
+  () => import('./charts').then(m => m.SavingsBarChart),
+  { ssr: false, loading: () => <ChartLoader h={280} /> }
+);
 
-const CustomTooltip = ({ active, payload, label }: any) => {
-  if (!active || !payload?.length) return null;
+function ChartLoader({ h }: { h: number }) {
   return (
-    <div style={{ background: 'white', border: '1.5px solid var(--border-card)', borderRadius: '12px', padding: '12px 16px', boxShadow: 'var(--shadow-card)' }}>
-      <p style={{ fontFamily: 'Poppins', fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6, fontSize: '0.85rem' }}>{label}</p>
-      {payload.map((p: any) => (
-        <p key={p.name} style={{ fontSize: '0.78rem', color: p.color, fontFamily: 'JetBrains Mono', fontWeight: 600 }}>
-          {p.name}: {formatCurrency(p.value, true)}
-        </p>
-      ))}
+    <div style={{ height: h, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <Loader2 className="animate-spin" size={28} color="var(--primary)" />
     </div>
   );
-};
-
-function getHeatmapColor(amount: number): string {
-  if (amount === 0) return 'rgba(75,179,253,0.06)';
-  if (amount < 200000) return 'rgba(75,179,253,0.2)';
-  if (amount < 500000) return 'rgba(75,179,253,0.45)';
-  if (amount < 1000000) return 'rgba(75,179,253,0.7)';
-  return 'rgba(75,179,253,0.95)';
 }
 
-const topCategory = categoryData[0];
-const avgDaily = Math.round(summary.expense / 9);
+const fmt = (n: number) =>
+  new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND', maximumFractionDigits: 0 }).format(n);
 
-const insights = [
-  {
-    icon: '🎯', color: '#FF6B8A', bg: 'rgba(255,107,138,0.1)',
-    title: 'Food budget exceeded',
-    desc: `Chi tiêu ăn uống vượt ngân sách ${formatCurrency(450000, true)} trong tháng này. Hãy cân nhắc nấu ăn ở nhà nhiều hơn.`,
-  },
-  {
-    icon: '💡', color: '#FFC94A', bg: 'rgba(255,201,74,0.1)',
-    title: 'Great savings rate!',
-    desc: `Tỷ lệ tiết kiệm ${summary.savingsRate}% tháng này vượt mục tiêu 25%. Duy trì thói quen này để đạt mục tiêu MacBook sớm hơn.`,
-  },
-  {
-    icon: '📈', color: '#4BB3FD', bg: 'rgba(75,179,253,0.1)',
-    title: 'Income trend positive',
-    desc: `Thu nhập tháng 3 tăng 18.3% so với tháng trước nhờ dự án freelance mới. Hãy cân nhắc đầu tư phần dư.`,
-  },
-];
+const FALLBACK_COLORS = ['#6366f1', '#8b5cf6', '#ec4899', '#f43f5e', '#f59e0b', '#10b981', '#14b8a6', '#3b82f6'];
 
 export default function AnalyticsPage() {
-  const kpiCards = [
-    { label: 'Avg Daily Spend', value: formatCurrency(avgDaily, true), icon: Flame, color: '#FF6B8A', bg: 'rgba(255,107,138,0.12)' },
-    { label: 'Top Category', value: topCategory?.name || '—', icon: TrendingDown, color: '#A78BFA', bg: 'rgba(167,139,250,0.12)' },
-    { label: 'Savings Rate', value: `${summary.savingsRate}%`, icon: PiggyBank, color: '#2DD4BF', bg: 'rgba(45,212,191,0.12)' },
-    { label: 'Income Growth', value: '+18.3%', icon: TrendingUp, color: '#4BB3FD', bg: 'rgba(75,179,253,0.12)' },
+  const router = useRouter();
+  const currentYear = new Date().getFullYear();
+  const [year, setYear] = useState(String(currentYear));
+  const [monthlyData, setMonthlyData] = useState<any[]>([]);
+  const [categoryData, setCategoryData] = useState<any[]>([]);
+  const [loadingMonthly, setLoadingMonthly] = useState(true);
+  const [loadingCat, setLoadingCat] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoadingMonthly(true);
+    api.get(`/analytics/monthly?year=${year}`)
+      .then(res => { if (!cancelled) setMonthlyData(res.data.data || []); })
+      .catch(err => { if (err?.response?.status === 401) router.push('/login'); })
+      .finally(() => { if (!cancelled) setLoadingMonthly(false); });
+    return () => { cancelled = true; };
+  }, [year]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoadingCat(true);
+    api.get(`/analytics/categories?start=${year}-01-01&end=${year}-12-31`)
+      .then(res => {
+        if (!cancelled) {
+          const data = (res.data.data || []).map((c: any, i: number) => ({
+            ...c,
+            color: c.color || FALLBACK_COLORS[i % FALLBACK_COLORS.length],
+          }));
+          setCategoryData(data);
+        }
+      })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoadingCat(false); });
+    return () => { cancelled = true; };
+  }, [year]);
+
+  const totalIncome  = monthlyData.reduce((s, m) => s + (m.income  || 0), 0);
+  const totalExpense = monthlyData.reduce((s, m) => s + (m.expense || 0), 0);
+  const totalSavings = totalIncome - totalExpense;
+  const savingsRate  = totalIncome > 0 ? ((totalSavings / totalIncome) * 100).toFixed(1) : '0.0';
+  const avgMonthly   = totalExpense / 12;
+  const topCat       = categoryData[0];
+
+  const kpi = [
+    { label: 'Tổng thu nhập',   value: fmt(totalIncome),  color: '#4BB3FD', bg: 'rgba(75,179,253,0.12)',   Icon: TrendingUp },
+    { label: 'Tổng chi tiêu',   value: fmt(totalExpense), color: '#FF6B8A', bg: 'rgba(255,107,138,0.12)', Icon: TrendingDown },
+    { label: 'Tiết kiệm',       value: fmt(totalSavings), color: '#2DD4BF', bg: 'rgba(45,212,191,0.12)',  Icon: PiggyBank },
+    { label: 'Tỉ lệ tiết kiệm', value: `${savingsRate}%`,  color: '#A78BFA', bg: 'rgba(167,139,250,0.12)', Icon: TrendingUp },
   ];
 
   return (
     <AppLayout>
-      <div className="page-header">
-        <h1 className="page-title">Analytics & Reports</h1>
-        <p className="page-subtitle">Phân tích sâu về tài chính cá nhân của bạn</p>
+      {/* Header + year selector */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px', marginBottom: '24px' }}>
+        <div>
+          <h1 className="page-title">Analytics & Reports</h1>
+          <p className="page-subtitle">Phân tích thu chi — dữ liệu thực từ hệ thống</p>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)', fontWeight: 600 }}>Năm:</span>
+          <select
+            value={year}
+            onChange={e => setYear(e.target.value)}
+            style={{
+              appearance: 'none', padding: '7px 14px', borderRadius: '10px',
+              border: '1px solid var(--border)', background: 'var(--card-bg)',
+              color: 'var(--text-primary)', fontWeight: 700, cursor: 'pointer', fontSize: '0.88rem'
+            }}
+          >
+            {[currentYear - 1, currentYear, currentYear + 1].map(y => (
+              <option key={String(y)} value={String(y)}>{y}</option>
+            ))}
+          </select>
+        </div>
       </div>
 
-      {/* KPI Cards */}
+      {/* KPI cards */}
       <div className="stats-grid" style={{ marginBottom: '24px' }}>
-        {kpiCards.map((k) => {
-          const Icon = k.icon;
-          return (
-            <div key={k.label} className="stat-card">
-              <div className="stat-icon" style={{ background: k.bg }}>
-                <Icon size={22} color={k.color} strokeWidth={2.5} />
-              </div>
-              <div className="stat-label">{k.label}</div>
-              <div className="stat-value font-mono" style={{ fontSize: '1.3rem' }}>{k.value}</div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Area Chart — 12 Month */}
-      <div className="chart-card" style={{ marginBottom: '24px' }}>
-        <div className="chart-title">Income vs Expense — 12 Months</div>
-        <div className="chart-subtitle">Xu hướng thu chi 12 tháng gần nhất</div>
-        <ResponsiveContainer width="100%" height={260}>
-          <AreaChart data={monthlyData} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
-            <defs>
-              <linearGradient id="incomeGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#4BB3FD" stopOpacity={0.25} />
-                <stop offset="95%" stopColor="#4BB3FD" stopOpacity={0.02} />
-              </linearGradient>
-              <linearGradient id="expenseGrad" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#FF6B8A" stopOpacity={0.2} />
-                <stop offset="95%" stopColor="#FF6B8A" stopOpacity={0.02} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(75,179,253,0.1)" />
-            <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#9BB4CC', fontFamily: 'Inter' }} axisLine={false} tickLine={false} />
-            <YAxis tick={{ fontSize: 10, fill: '#9BB4CC', fontFamily: 'JetBrains Mono' }} axisLine={false} tickLine={false} tickFormatter={(v) => `${(v / 1000000).toFixed(0)}M`} />
-            <Tooltip content={<CustomTooltip />} />
-            <Legend wrapperStyle={{ fontSize: '0.8rem', fontFamily: 'Inter', paddingTop: 8 }} />
-            <Area type="monotone" dataKey="income" name="Income" stroke="#4BB3FD" strokeWidth={2.5} fill="url(#incomeGrad)" dot={false} activeDot={{ r: 5 }} />
-            <Area type="monotone" dataKey="expense" name="Expense" stroke="#FF6B8A" strokeWidth={2.5} fill="url(#expenseGrad)" dot={false} activeDot={{ r: 5 }} />
-          </AreaChart>
-        </ResponsiveContainer>
-      </div>
-
-      {/* Heatmap + Category Donut */}
-      <div className="charts-grid" style={{ marginBottom: '24px' }}>
-        {/* Daily Spending Heatmap */}
-        <div className="chart-card">
-          <div className="chart-title">Daily Spending Heatmap</div>
-          <div className="chart-subtitle">35 ngày gần nhất — màu đậm = chi nhiều hơn</div>
-          <div className="heatmap-grid" style={{ marginTop: '8px' }}>
-            {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map(d => (
-              <div key={d} style={{ textAlign: 'center', fontSize: '0.65rem', color: 'var(--text-muted)', fontWeight: 600, padding: '4px 0 6px' }}>{d}</div>
-            ))}
-            {dailySpends.map((d) => (
-              <div
-                key={d.date}
-                className="heatmap-cell"
-                title={`${d.date}: ${formatCurrency(d.amount, true)}`}
-                style={{ background: getHeatmapColor(d.amount), border: '1px solid rgba(75,179,253,0.1)' }}
-              />
-            ))}
-          </div>
-          <div style={{ display: 'flex', gap: '8px', marginTop: '12px', alignItems: 'center', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
-            <span>Less</span>
-            {[0.06, 0.2, 0.45, 0.7, 0.95].map(op => (
-              <div key={op} style={{ width: 14, height: 14, borderRadius: '3px', background: `rgba(75,179,253,${op})` }} />
-            ))}
-            <span>More</span>
-          </div>
-        </div>
-
-        {/* Category Donut */}
-        <div className="chart-card">
-          <div className="chart-title">Spending by Category</div>
-          <div className="chart-subtitle">Tổng chi theo danh mục</div>
-          <ResponsiveContainer width="100%" height={200}>
-            <PieChart>
-              <Pie data={categoryData} cx="50%" cy="50%" innerRadius={60} outerRadius={85} paddingAngle={3} dataKey="value">
-                {categoryData.map((entry, i) => <Cell key={i} fill={entry.color} stroke="none" />)}
-              </Pie>
-              <Tooltip formatter={(v: unknown) => formatCurrency(v as number, true)} />
-            </PieChart>
-          </ResponsiveContainer>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            {categoryData.map(c => (
-              <div key={c.name} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <div style={{ width: 10, height: 10, borderRadius: '3px', background: c.color, flexShrink: 0 }} />
-                  <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>{c.name}</span>
-                </div>
-                <div style={{ display: 'flex', gap: '12px' }}>
-                  <span className="font-mono" style={{ fontSize: '0.75rem', fontWeight: 600, color: 'var(--text-primary)' }}>{formatCurrency(c.value, true)}</span>
-                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', width: '30px', textAlign: 'right' }}>{c.pct}%</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      {/* Monthly Bar Chart */}
-      <div className="chart-card" style={{ marginBottom: '24px' }}>
-        <div className="chart-title">Monthly Savings</div>
-        <div className="chart-subtitle">Số tiền tiết kiệm mỗi tháng</div>
-        <ResponsiveContainer width="100%" height={200}>
-          <BarChart data={monthlyData} margin={{ top: 5, right: 10, left: -10, bottom: 0 }}>
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(75,179,253,0.1)" vertical={false} />
-            <XAxis dataKey="month" tick={{ fontSize: 11, fill: '#9BB4CC', fontFamily: 'Inter' }} axisLine={false} tickLine={false} />
-            <YAxis tick={{ fontSize: 10, fill: '#9BB4CC', fontFamily: 'JetBrains Mono' }} axisLine={false} tickLine={false} tickFormatter={(v) => `${(v / 1000000).toFixed(0)}M`} />
-            <Tooltip content={<CustomTooltip />} />
-            <Bar dataKey="savings" name="Savings" radius={[8, 8, 0, 0]} maxBarSize={40}>
-              {monthlyData.map((entry, i) => (
-                <Cell key={i} fill={entry.savings < 0 ? '#FF6B8A' : entry.savings > 10000000 ? '#4BB3FD' : '#A78BFA'} />
-              ))}
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
-
-      {/* Smart Insights */}
-      <div style={{ marginBottom: '8px' }}>
-        <div className="section-header">
-          <span className="section-title"><Brain size={18} style={{ display: 'inline', marginRight: '6px', verticalAlign: 'middle' }} />Smart Insights</span>
-        </div>
-      </div>
-      <div className="grid-3">
-        {insights.map((ins, i) => (
-          <div key={i} className="insight-card">
-            <div className="insight-icon" style={{ background: ins.bg }}>
-              <span style={{ fontSize: '1.3rem' }}>{ins.icon}</span>
-            </div>
-            <div>
-              <div style={{ fontFamily: 'Poppins', fontWeight: 700, fontSize: '0.875rem', color: 'var(--text-primary)', marginBottom: '4px' }}>{ins.title}</div>
-              <p style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>{ins.desc}</p>
+        {kpi.map(({ label, value, color, bg, Icon }) => (
+          <div key={label} className="stat-card">
+            <div className="stat-icon" style={{ background: bg }}><Icon size={22} color={color} strokeWidth={2.5} /></div>
+            <div className="stat-label">{label}</div>
+            <div className="stat-value font-mono" style={{ fontSize: '1.15rem' }}>
+              {loadingMonthly ? '...' : value}
             </div>
           </div>
         ))}
+      </div>
+
+      {/* Area chart */}
+      {loadingMonthly ? (
+        <div className="chart-card" style={{ marginBottom: '24px' }}><ChartLoader h={280} /></div>
+      ) : (
+        <AreaChartComponent data={monthlyData} year={year} />
+      )}
+
+      {/* Side by side */}
+      <div className="charts-grid" style={{ marginBottom: '24px' }}>
+        {/* Donut */}
+        <div className="chart-card">
+          <div className="chart-title">Chi tiêu theo Danh Mục</div>
+          <div className="chart-subtitle">Tổng chi phân loại cả năm {year}</div>
+          {loadingCat ? (
+            <ChartLoader h={200} />
+          ) : categoryData.length === 0 ? (
+            <div style={{ height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: '0.85rem' }}>
+              Chưa có dữ liệu chi tiêu
+            </div>
+          ) : (
+            <DonutChart data={categoryData} />
+          )}
+        </div>
+
+        {/* Savings bar */}
+        <div className="chart-card">
+          <div className="chart-title">Tiết kiệm hàng tháng</div>
+          <div className="chart-subtitle">Thu nhập trừ chi tiêu mỗi tháng</div>
+          {loadingMonthly ? <ChartLoader h={280} /> : <SavingsBarChart data={monthlyData} />}
+        </div>
+      </div>
+
+      {/* Summary stats */}
+      <div className="card" style={{ padding: '16px 24px' }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '24px', justifyContent: 'space-around' }}>
+          {[
+            { label: 'Chi tiêu TB/tháng',      value: fmt(avgMonthly),             color: '#FF6B8A' },
+            { label: 'Danh mục chi nhiều nhất', value: topCat ? `${topCat.icon} ${topCat.name}` : '—', color: topCat?.color || 'var(--primary)' },
+            { label: 'Tổng tiết kiệm',          value: fmt(Math.max(0, totalSavings)), color: '#2DD4BF' },
+            { label: 'Số danh mục',             value: `${categoryData.length}`,    color: 'var(--primary)' },
+          ].map(({ label, value, color }) => (
+            <div key={label} style={{ textAlign: 'center' }}>
+              <div style={{ fontSize: '0.73rem', color: 'var(--text-muted)', fontWeight: 500, marginBottom: '4px' }}>{label}</div>
+              <div style={{ fontWeight: 700, fontSize: '0.9rem', color }}>{value}</div>
+            </div>
+          ))}
+        </div>
       </div>
     </AppLayout>
   );

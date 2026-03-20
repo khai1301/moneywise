@@ -1,7 +1,7 @@
 'use client';
 import { useState, useEffect } from 'react';
 import AppLayout from '@/components/layout/AppLayout';
-import { formatCurrency, formatDate } from '@/lib/fakeData'; 
+import { formatCurrency, formatDate } from '@/lib/utils'; 
 import { Search, Plus, X, Filter, TrendingUp, TrendingDown, Calendar, CreditCard, Loader2, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
 import api from '@/lib/axios';
 import { useRouter } from 'next/navigation';
@@ -18,10 +18,37 @@ export default function TransactionsPage() {
   const [totalItems, setTotalItems] = useState(0);
   const limit = 20;
 
-  // Local Filters
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState<'all' | 'income' | 'expense'>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+
+  const buildQueryParams = (pageNum: number) => {
+    const params = new URLSearchParams({
+      page: String(pageNum),
+      limit: String(limit),
+    });
+    if (typeFilter !== 'all') params.set('type', typeFilter);
+    if (categoryFilter !== 'all') params.set('category_id', categoryFilter);
+    if (startDate) params.set('start_date', startDate);
+    if (endDate) params.set('end_date', endDate);
+    return params.toString();
+  };
+
+  const handleApplyFilters = () => {
+    setPage(1);
+    fetchTransactions(1);
+  };
+
+  const handleClearFilters = () => {
+    setTypeFilter('all');
+    setCategoryFilter('all');
+    setStartDate('');
+    setEndDate('');
+    setSearch('');
+    setPage(1);
+  };
   
   // Modal State
   const [showModal, setShowModal] = useState(false);
@@ -44,10 +71,11 @@ export default function TransactionsPage() {
   const fetchTransactions = async (pageNum: number) => {
     try {
       setLoading(true);
-      const res = await api.get(`/transactions?page=${pageNum}&limit=${limit}`);
+      const params = buildQueryParams(pageNum);
+      const res = await api.get(`/transactions?${params}`);
       setTransactions(res.data.data || []);
-      setTotalPages(res.data.pagination.total_pages || 1);
-      setTotalItems(res.data.pagination.total_items || 0);
+      setTotalPages(res.data.pagination?.total_pages || 1);
+      setTotalItems(res.data.pagination?.total_items || 0);
     } catch (err: any) {
       if (err.response?.status === 401) router.push('/login');
     } finally {
@@ -121,16 +149,9 @@ export default function TransactionsPage() {
     }
   };
 
-  // Lọc local trên trang hiện tại
-  const filtered = transactions.filter(t => {
-    const matchSearch = t.title.toLowerCase().includes(search.toLowerCase());
-    const matchType = typeFilter === 'all' || t.type === typeFilter;
-    const matchCat = categoryFilter === 'all' || (t.Category && t.Category.id === categoryFilter);
-    return matchSearch && matchType && matchCat;
-  });
-
-  const totalIncome = filtered.filter(t => t.type === 'income').reduce((s, t) => s + t.amount, 0);
-  const totalExpense = filtered.filter(t => t.type === 'expense').reduce((s, t) => s + t.amount, 0);
+  // Filters are now server-side; just calculate page-level income/expense for the summary cards
+  const totalIncome = transactions.filter(t => t.type === 'income').reduce((s: number, t: any) => s + t.amount, 0);
+  const totalExpense = transactions.filter(t => t.type === 'expense').reduce((s: number, t: any) => s + t.amount, 0);
 
   return (
     <AppLayout>
@@ -165,28 +186,169 @@ export default function TransactionsPage() {
         </div>
       </div>
 
-      <div className="card" style={{ marginBottom: '20px', padding: '16px 20px', background: 'var(--card-bg)' }}>
-        <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', alignItems: 'center' }}>
-          <div className="input-icon-wrap" style={{ flex: 1, minWidth: '200px' }}>
-            <Search size={16} className="input-icon" style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-            <input className="input" style={{ paddingLeft: '40px' }} placeholder="Tìm kiếm trong trang hiện tại..." value={search} onChange={e => setSearch(e.target.value)} />
+      {/* ─── Filter Bar ─── */}
+      <div className="card" style={{
+        marginBottom: '20px',
+        padding: '0',
+        overflow: 'hidden',
+        background: 'var(--card-bg)',
+        border: '1px solid var(--border)',
+      }}>
+        {/* Top strip */}
+        <div style={{
+          padding: '14px 20px',
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: '10px',
+          alignItems: 'center',
+          borderBottom: '1px solid var(--border)',
+          background: 'var(--card-bg)',
+        }}>
+          {/* Label */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginRight: '4px' }}>
+            <Filter size={14} color="var(--primary)" />
+            <span style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--primary)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Bộ lọc</span>
           </div>
-          <div className="toggle-group">
-            {(['all', 'income', 'expense'] as const).map(t => (
-              <button key={t} className={`toggle-btn ${typeFilter === t ? (t === 'income' ? 'active-income' : t === 'expense' ? 'active-expense' : 'active-income') : ''}`}
-                style={typeFilter === t && t === 'all' ? { background: 'var(--primary)', color: 'white' } : {}}
-                onClick={() => setTypeFilter(t)}>
-                {t === 'all' ? 'All' : t === 'income' ? 'Income' : 'Expense'}
-              </button>
-            ))}
+
+          {/* Pill-style type filter */}
+          <div style={{ display: 'flex', gap: '6px', background: 'var(--bg)', padding: '4px', borderRadius: '12px', border: '1px solid var(--border)' }}>
+            {(['all', 'income', 'expense'] as const).map(t => {
+              const isActive = typeFilter === t;
+              const colors = {
+                all:     { bg: 'var(--primary)', text: 'white' },
+                income:  { bg: '#0D9469',         text: 'white' },
+                expense: { bg: '#D63A5A',          text: 'white' },
+              };
+              return (
+                <button key={t} onClick={() => setTypeFilter(t)} style={{
+                  padding: '5px 14px',
+                  borderRadius: '9px',
+                  border: 'none',
+                  cursor: 'pointer',
+                  fontSize: '0.78rem',
+                  fontWeight: 600,
+                  transition: 'all 0.18s ease',
+                  background: isActive ? colors[t].bg : 'transparent',
+                  color: isActive ? colors[t].text : 'var(--text-muted)',
+                  boxShadow: isActive ? '0 2px 8px rgba(0,0,0,0.15)' : 'none',
+                }}>
+                  {t === 'all' ? 'Tất cả' : t === 'income' ? '↑ Thu nhập' : '↓ Chi tiêu'}
+                </button>
+              );
+            })}
           </div>
-          <select className="input" style={{ width: 'auto', minWidth: '150px' }} value={categoryFilter} onChange={e => setCategoryFilter(e.target.value)}>
-            <option value="all">All Categories</option>
-            {categories.map(c => <option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
-          </select>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-            <Filter size={14} /> {filtered.length} kết quả
+
+          {/* Divider */}
+          <div style={{ width: 1, height: 28, background: 'var(--border)', margin: '0 4px' }} />
+
+          {/* Category select — custom styled */}
+          <div style={{ position: 'relative', minWidth: '160px' }}>
+            <select
+              value={categoryFilter}
+              onChange={e => setCategoryFilter(e.target.value)}
+              style={{
+                appearance: 'none',
+                WebkitAppearance: 'none',
+                width: '100%',
+                padding: '7px 32px 7px 12px',
+                border: '1px solid var(--border)',
+                borderRadius: '10px',
+                background: 'var(--bg)',
+                color: categoryFilter !== 'all' ? 'var(--primary)' : 'var(--text-secondary)',
+                fontWeight: categoryFilter !== 'all' ? 700 : 400,
+                fontSize: '0.82rem',
+                cursor: 'pointer',
+                outline: 'none',
+              }}>
+              <option value="all">🏷️ Tất cả danh mục</option>
+              {categories.map((c: any) => <option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
+            </select>
+            <span style={{ position: 'absolute', right: '10px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: 'var(--text-muted)', fontSize: '0.7rem' }}>▾</span>
           </div>
+
+          {/* Spacer */}
+          <div style={{ flex: 1 }} />
+
+          {/* Result count badge */}
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: '6px',
+            background: 'var(--primary-light, rgba(99,102,241,0.08))',
+            color: 'var(--primary)',
+            padding: '5px 12px',
+            borderRadius: '20px',
+            fontSize: '0.78rem',
+            fontWeight: 600,
+          }}>
+            <span style={{ opacity: 0.7 }}>📋</span> {totalItems} giao dịch
+          </div>
+        </div>
+
+        {/* Bottom strip — Date range */}
+        <div style={{
+          padding: '12px 20px',
+          display: 'flex',
+          flexWrap: 'wrap',
+          gap: '10px',
+          alignItems: 'center',
+          background: 'var(--bg)',
+        }}>
+          <Calendar size={14} color="var(--text-muted)" />
+          <span style={{ fontSize: '0.8rem', color: 'var(--text-muted)', fontWeight: 500 }}>Khoảng thời gian</span>
+
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, flexWrap: 'wrap' }}>
+            <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
+              style={{
+                padding: '6px 10px', borderRadius: '10px', border: '1px solid var(--border)',
+                background: 'var(--card-bg)', color: 'var(--text-primary)',
+                fontSize: '0.82rem', outline: 'none', cursor: 'pointer', minWidth: '140px',
+              }} />
+            <span style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>→</span>
+            <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
+              style={{
+                padding: '6px 10px', borderRadius: '10px', border: '1px solid var(--border)',
+                background: 'var(--card-bg)', color: 'var(--text-primary)',
+                fontSize: '0.82rem', outline: 'none', cursor: 'pointer', minWidth: '140px',
+              }} />
+          </div>
+
+          {/* Apply button */}
+          <button onClick={handleApplyFilters} style={{
+            padding: '7px 20px',
+            borderRadius: '10px',
+            border: 'none',
+            background: 'linear-gradient(135deg, var(--primary), #8b5cf6)',
+            color: 'white',
+            fontWeight: 700,
+            fontSize: '0.82rem',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '6px',
+            boxShadow: '0 2px 10px rgba(99,102,241,0.35)',
+            transition: 'opacity 0.15s',
+          }}>
+            🔍 Áp dụng
+          </button>
+
+          {/* Clear badge */}
+          {(typeFilter !== 'all' || categoryFilter !== 'all' || startDate || endDate) && (
+            <button onClick={handleClearFilters} style={{
+              padding: '7px 14px',
+              borderRadius: '10px',
+              border: '1px solid var(--border)',
+              background: 'transparent',
+              color: 'var(--text-muted)',
+              fontWeight: 600,
+              fontSize: '0.78rem',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px',
+              transition: 'all 0.15s',
+            }}>
+              ✕ Xóa lọc
+            </button>
+          )}
         </div>
       </div>
 
@@ -210,7 +372,7 @@ export default function TransactionsPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filtered.map(t => {
+                  {transactions.map((t: any) => {
                     const catName = t.Category?.name || 'Other';
                     const catColor = t.Category?.color || '#ccc';
                     const catIcon = t.Category?.icon || '📝';
@@ -255,7 +417,7 @@ export default function TransactionsPage() {
                       </tr>
                     );
                   })}
-                  {filtered.length === 0 && (
+                  {transactions.length === 0 && (
                     <tr>
                       <td colSpan={6}>
                         <div className="empty-state">

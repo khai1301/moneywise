@@ -1,6 +1,6 @@
 'use client';
 import React from 'react';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   LayoutDashboard, ArrowLeftRight, Target, BarChart2,
@@ -18,6 +18,12 @@ const navItems: { href: string; label: string; icon: React.ElementType; badge?: 
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
+
+  const handleLogout = () => {
+    localStorage.removeItem('token');
+    router.push('/login');
+  };
 
   return (
     <aside className="sidebar">
@@ -65,7 +71,7 @@ export default function Sidebar() {
             <div className="sidebar-user-name">Khai Phan</div>
             <div className="sidebar-user-role">Personal Account</div>
           </div>
-          <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.4)', padding: '4px' }}>
+          <button onClick={handleLogout} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'rgba(255,255,255,0.4)', padding: '4px' }}>
             <LogOut size={16} />
           </button>
         </div>
