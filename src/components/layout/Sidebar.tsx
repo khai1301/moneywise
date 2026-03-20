@@ -1,4 +1,5 @@
 'use client';
+import React from 'react';
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -6,9 +7,10 @@ import {
   DollarSign, LogOut, Settings, Bell, Tag
 } from 'lucide-react';
 
-const navItems = [
+const navItems: { href: string; label: string; icon: React.ElementType; badge?: string }[] = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/transactions', label: 'Transactions', icon: ArrowLeftRight, badge: '3' },
+  { href: '/transactions', label: 'Transactions', icon: ArrowLeftRight },
+  { href: '/categories', label: 'Categories', icon: Tag },
   { href: '/budgets', label: 'Budgets & Goals', icon: Target },
   { href: '/analytics', label: 'Analytics', icon: BarChart2 },
   { href: '/settings', label: 'Settings', icon: Settings },

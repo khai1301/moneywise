@@ -1,17 +1,39 @@
 'use client';
 import { useState } from 'react';
-import { Mail, Lock, Check } from 'lucide-react';
+import { Mail, Lock, Check, User, AlertCircle } from 'lucide-react';
 import { useRouter } from 'next/navigation';
+import api from '../../lib/axios';
 
 export default function LoginPage() {
   const router = useRouter();
+  const [isRegister, setIsRegister] = useState(false);
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (email && password) {
-      router.push('/dashboard');
+    setError('');
+    setSuccess('');
+    setLoading(true);
+    
+    try {
+      if (isRegister) {
+        await api.post('/auth/register', { name, email, password });
+        setIsRegister(false);
+        setSuccess('Đăng ký thành công! Vui lòng đăng nhập bằng tài khoản vừa tạo.');
+      } else {
+        const res = await api.post('/auth/login', { email, password });
+        localStorage.setItem('token', res.data.token);
+        router.push('/dashboard');
+      }
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Có lỗi xảy ra, vui lòng thử lại sau');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -134,11 +156,56 @@ export default function LoginPage() {
         }}>
           <div className="card" style={{ width: '100%', maxWidth: '420px', padding: '40px 32px' }}>
             <div style={{ marginBottom: '32px', textAlign: 'center' }}>
-              <h2 className="page-title" style={{ fontSize: '2rem', marginBottom: '8px' }}>Welcome Back</h2>
-              <p className="page-subtitle">Sign in to your account</p>
+              <h2 className="page-title" style={{ fontSize: '2rem', marginBottom: '8px' }}>
+                {isRegister ? 'Tạo Tài Khoản' : 'Welcome Back'}
+              </h2>
+              <p className="page-subtitle">
+                {isRegister ? 'Đăng ký để sử dụng MoneyWise' : 'Đăng nhập vào tài khoản của bạn'}
+              </p>
             </div>
             
-            <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+            {error && (
+              <div style={{ 
+                padding: '12px', background: 'rgba(239, 68, 68, 0.1)', 
+                color: '#ef4444', borderRadius: '8px', marginBottom: '20px', 
+                display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.9rem',
+                border: '1px solid rgba(239,68,68,0.2)'
+              }}>
+                <AlertCircle size={18} />
+                <span>{error}</span>
+              </div>
+            )}
+
+            {success && (
+              <div style={{ 
+                padding: '12px', background: 'rgba(34, 197, 94, 0.1)', 
+                color: '#16a34a', borderRadius: '8px', marginBottom: '20px', 
+                display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.9rem',
+                border: '1px solid rgba(34,197,94,0.2)'
+              }}>
+                <Check size={18} />
+                <span>{success}</span>
+              </div>
+            )}
+            
+            <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              {isRegister && (
+                <div className="input-group">
+                  <label className="input-label">Tên của bạn</label>
+                  <div className="input-icon-wrap">
+                    <User className="input-icon" size={18} />
+                    <input 
+                      className="input" 
+                      placeholder="Nguyễn Văn A" 
+                      type="text"
+                      value={name}
+                      onChange={(e) => setName(e.target.value)}
+                      required={isRegister}
+                    />
+                  </div>
+                </div>
+              )}
+
               <div className="input-group">
                 <label className="input-label">Email Address</label>
                 <div className="input-icon-wrap">
@@ -157,7 +224,7 @@ export default function LoginPage() {
               <div className="input-group">
                 <label className="input-label" style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <span>Password</span>
-                  <a href="#" style={{ color: 'var(--primary)', textDecoration: 'none', textTransform: 'none', fontSize: '0.8rem' }}>Forgot?</a>
+                  {!isRegister && <a href="#" style={{ color: 'var(--primary)', textDecoration: 'none', textTransform: 'none', fontSize: '0.8rem' }}>Forgot?</a>}
                 </label>
                 <div className="input-icon-wrap">
                   <Lock className="input-icon" size={18} />
@@ -173,8 +240,8 @@ export default function LoginPage() {
               </div>
               
               <div style={{ marginTop: '8px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                <button type="submit" className="btn btn-primary" style={{ width: '100%', justifyContent: 'center', padding: '14px', fontSize: '1rem' }}>
-                  Log In
+                <button disabled={loading} type="submit" className="btn btn-primary" style={{ width: '100%', justifyContent: 'center', padding: '14px', fontSize: '1rem', opacity: loading ? 0.7 : 1 }}>
+                  {loading ? 'Đang xử lý...' : (isRegister ? 'Đăng Ký' : 'Đăng Nhập')}
                 </button>
                 
                 <div style={{ display: 'flex', alignItems: 'center', margin: '8px 0' }}>
@@ -191,8 +258,14 @@ export default function LoginPage() {
             </form>
             
             <div style={{ marginTop: '32px', textAlign: 'center', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                Don't have an account? 
-                <a href="#" style={{ color: 'var(--primary)', fontWeight: 600, textDecoration: 'none', marginLeft: '6px' }}>Create Account</a>
+                {isRegister ? "Đã có tài khoản? " : "Chưa có tài khoản? "}
+                <a 
+                  href="#" 
+                  onClick={(e) => { e.preventDefault(); setIsRegister(!isRegister); setError(''); }} 
+                  style={{ color: 'var(--primary)', fontWeight: 600, textDecoration: 'none', marginLeft: '6px', cursor: 'pointer' }}
+                >
+                  {isRegister ? "Đăng Nhập" : "Đăng Ký ngay"}
+                </a>
             </div>
           </div>
         </div>
