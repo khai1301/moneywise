@@ -29,6 +29,8 @@ const emptyForm = { categoryId: '', amount: '', month: '', note: '' };
 export default function BudgetsPage() {
   const router = useRouter();
   const [budgets, setBudgets] = useState<BudgetItem[]>([]);
+  const [cycleStart, setCycleStart] = useState('');
+  const [cycleEnd, setCycleEnd] = useState('');
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -57,6 +59,8 @@ export default function BudgetsPage() {
       setLoading(true);
       const res = await api.get(`/budgets?month=${selectedMonth}`);
       setBudgets(res.data.data || []);
+      setCycleStart(res.data.start || '');
+      setCycleEnd(res.data.end || '');
     } catch (err: any) {
       if (err.response?.status === 401) router.push('/login');
     } finally {
@@ -132,12 +136,17 @@ export default function BudgetsPage() {
       </div>
 
       {/* Month Picker */}
-      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '24px' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginBottom: '24px', gap: '8px' }}>
         <div style={{ display: 'inline-flex', alignItems: 'center', gap: '16px', background: 'var(--card-bg)', border: '1px solid var(--border)', borderRadius: '16px', padding: '10px 20px' }}>
           <button onClick={prevMonth} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex' }}><ChevronLeft size={20} /></button>
           <span style={{ fontFamily: 'Poppins', fontWeight: 700, fontSize: '1rem', minWidth: '130px', textAlign: 'center' }}>{getMonthLabel(selectedMonth)}</span>
           <button onClick={nextMonth} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex' }}><ChevronRight size={20} /></button>
         </div>
+        {cycleStart && cycleEnd && (
+          <span style={{ background: 'var(--primary-light, rgba(99,102,241,0.1))', color: 'var(--primary)', padding: '5px 14px', borderRadius: '20px', fontSize: '0.8rem', fontWeight: 600 }}>
+            Hiệu lực: {new Date(cycleStart).toLocaleDateString('vi-VN')} - {new Date(cycleEnd).toLocaleDateString('vi-VN')}
+          </span>
+        )}
       </div>
 
       {/* Summary cards */}

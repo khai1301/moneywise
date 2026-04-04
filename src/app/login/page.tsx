@@ -64,14 +64,11 @@ export default function LoginPage() {
       </div>
       
       {/* Main Container */}
-      <div style={{
+      <div className="login-container" style={{
         width: '100%',
         maxWidth: '1000px',
-        minHeight: '600px',
-        height: '80vh',
         backgroundColor: 'rgba(255, 255, 255, 0.6)',
         backdropFilter: 'blur(10px)',
-        borderRadius: 'var(--radius-xl)',
         boxShadow: '0 24px 64px rgba(0,0,0,0.08)',
         display: 'flex',
         overflow: 'hidden',
@@ -81,10 +78,8 @@ export default function LoginPage() {
       }}>
         
         {/* Left Panel */}
-        <div style={{
-          flex: '1.2',
+        <div className="login-left" style={{
           background: 'linear-gradient(135deg, var(--primary), var(--primary-dark))',
-          padding: '48px',
           display: 'flex',
           flexDirection: 'column',
           justifyContent: 'space-between',
@@ -146,9 +141,7 @@ export default function LoginPage() {
         </div>
         
         {/* Right Panel (Login Form) */}
-        <div style={{
-          flex: '1',
-          padding: '48px',
+        <div className="login-right" style={{
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -274,13 +267,17 @@ export default function LoginPage() {
 
       {/* Media Queries implementation for React Inline Styles */}
       <style>{`
+        .login-container { min-height: 600px; height: 80vh; border-radius: var(--radius-xl); flex-direction: row; }
+        .login-left { flex: 1.2; padding: 48px; }
+        .login-right { flex: 1; padding: 48px; }
+        
         @media (max-width: 992px) {
           .card { padding: 30px 24px !important; }
         }
         @media (max-width: 768px) {
-          div[style*="minHeight: '600px'"] { flex-direction: column !important; height: auto !important; min-height: 100vh !important; border-radius: 0 !important; }
-          div[style*="flex: '1.2'"] { padding: 32px !important; }
-          div[style*="flex: '1'"] { padding: 24px !important; }
+          .login-container { flex-direction: column !important; height: auto !important; min-height: 100vh !important; border-radius: 0 !important; border: none; }
+          .login-left { flex: none !important; padding: 32px 24px !important; }
+          .login-right { flex: none !important; padding: 32px 16px !important; }
         }
       `}</style>
     </div>

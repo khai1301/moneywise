@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import AppLayout from '@/components/layout/AppLayout';
 import { formatCurrency, formatDate } from '@/lib/utils'; 
-import { Search, Plus, X, Filter, TrendingUp, TrendingDown, Calendar, CreditCard, Loader2, ChevronLeft, ChevronRight, Trash2 } from 'lucide-react';
+import { Search, Plus, X, Filter, TrendingUp, TrendingDown, Calendar, CreditCard, Loader2, ChevronLeft, ChevronRight, Trash2, Edit3 } from 'lucide-react';
 import api from '@/lib/axios';
 import { useRouter } from 'next/navigation';
 
@@ -10,6 +10,7 @@ export default function TransactionsPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [categories, setCategories] = useState<any[]>([]);
+  const [wallets, setWallets] = useState<any[]>([]);
   const [transactions, setTransactions] = useState<any[]>([]);
   
   // Pagination State
@@ -19,7 +20,7 @@ export default function TransactionsPage() {
   const limit = 20;
 
   const [search, setSearch] = useState('');
-  const [typeFilter, setTypeFilter] = useState<'all' | 'income' | 'expense'>('all');
+  const [typeFilter, setTypeFilter] = useState<'all' | 'income' | 'expense' | 'transfer'>('all');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -53,18 +54,23 @@ export default function TransactionsPage() {
   // Modal State
   const [showModal, setShowModal] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState({
-    title: '', amount: '', type: 'expense' as 'income' | 'expense', categoryId: '',
+    title: '', amount: '', type: 'expense' as 'income' | 'expense' | 'transfer', categoryId: '',
+    walletId: '', transferWalletId: '',
     date: new Date().toISOString().split('T')[0], note: '', paymentMethod: 'Cash'
   });
 
-  const fetchCategories = async () => {
+  const fetchData = async () => {
     try {
-      const res = await api.get('/categories');
-      const cats = res.data.data || [];
-      setCategories(cats);
+      const [catRes, walRes] = await Promise.all([
+        api.get('/categories'),
+        api.get('/wallets')
+      ]);
+      setCategories(catRes.data.data || []);
+      setWallets(walRes.data.data || []);
     } catch (error) {
-       console.error("Failed to load categories")
+       console.error("Failed to load initial data")
     }
   };
 
@@ -84,31 +90,44 @@ export default function TransactionsPage() {
   };
 
   useEffect(() => {
-    fetchCategories();
+    fetchData();
   }, []);
 
   useEffect(() => {
     fetchTransactions(page);
   }, [page, router]);
 
-  // Open modal and set default category
-  const openModal = () => {
-    const expenseCats = categories.filter(c => c.type === 'expense');
-    setForm(prev => ({
-      ...prev,
-      type: 'expense',
-      categoryId: expenseCats.length > 0 ? expenseCats[0].id : '',
-      date: new Date().toISOString().split('T')[0]
-    }));
+  // Open modal for Creating or Editing
+  const openModal = (t?: any) => {
+    if (t && t.id) {
+      setEditingId(t.id);
+      setForm({
+        title: t.title, amount: String(t.amount), type: t.type, categoryId: t.categoryId,
+        walletId: t.walletId || '', transferWalletId: t.transferWalletId || '',
+        date: new Date(t.date).toISOString().split('T')[0], note: t.note || '', paymentMethod: t.paymentMethod || 'Cash'
+      });
+    } else {
+      setEditingId(null);
+      const expenseCats = categories.filter(c => c.type === 'expense');
+      setForm({
+        title: '', amount: '', note: '', paymentMethod: 'Cash',
+        type: 'expense',
+        categoryId: expenseCats.length > 0 ? expenseCats[0].id : '',
+        walletId: wallets.length > 0 ? wallets[0].id : '',
+        transferWalletId: '',
+        date: new Date().toISOString().split('T')[0]
+      });
+    }
     setShowModal(true);
   };
 
-  const handleTypeToggle = (type: 'income' | 'expense') => {
-    const matchingCats = categories.filter(c => c.type === type);
+  const handleTypeToggle = (type: 'income' | 'expense' | 'transfer') => {
+    const matchingCats = type === 'transfer' ? categories : categories.filter(c => c.type === type);
     setForm({ 
        ...form, 
        type, 
-       categoryId: matchingCats.length > 0 ? matchingCats[0].id : '' 
+       categoryId: matchingCats.length > 0 ? matchingCats[0].id : '',
+       transferWalletId: type !== 'transfer' ? '' : form.transferWalletId
     });
   };
 
@@ -117,23 +136,36 @@ export default function TransactionsPage() {
       alert("Vui lòng điền đủ Title, Amount và Category!");
       return;
     }
+    if (parseFloat(form.amount) <= 0) {
+      alert("Số tiền giao dịch phải lớn hơn 0!");
+      return;
+    }
     setSubmitting(true);
     try {
-      await api.post('/transactions', {
+      const payload = {
         title: form.title,
         amount: parseFloat(form.amount),
         type: form.type,
         categoryId: form.categoryId,
+        walletId: form.walletId || undefined,
+        transferWalletId: form.type === 'transfer' ? (form.transferWalletId || undefined) : undefined,
         date: new Date(form.date).toISOString(), 
         note: form.note || "",
         paymentMethod: form.paymentMethod
-      });
+      };
+      
+      if (editingId) {
+        await api.put(`/transactions/${editingId}`, payload);
+      } else {
+        await api.post('/transactions', payload);
+      }
+      
       setShowModal(false);
-      setForm({ ...form, title: '', amount: '', note: '' }); 
       setPage(1);
       fetchTransactions(1);
+      fetchData(); // Refetch wallets to update balances in the creation modal
     } catch (err: any) {
-      alert(err.response?.data?.error || "Lỗi khi thêm giao dịch");
+      alert(err.response?.data?.error || "Lỗi khi lưu giao dịch");
     } finally {
       setSubmitting(false);
     }
@@ -144,6 +176,7 @@ export default function TransactionsPage() {
     try {
       await api.delete(`/transactions/${id}`);
       fetchTransactions(page);
+      fetchData(); // Refetch wallets to update balances
     } catch (err) {
       alert('Không thể xoá giao dịch');
     }
@@ -160,7 +193,7 @@ export default function TransactionsPage() {
           <h1 className="page-title">Transactions</h1>
           <p className="page-subtitle">Quản lý tất cả thu chi của bạn ({totalItems} giao dịch tìm thấy)</p>
         </div>
-        <button className="btn btn-primary" onClick={openModal}>
+        <button className="btn btn-primary" onClick={() => openModal()}>
           <Plus size={18} /> Add Transaction
         </button>
       </div>
@@ -212,13 +245,15 @@ export default function TransactionsPage() {
 
           {/* Pill-style type filter */}
           <div style={{ display: 'flex', gap: '6px', background: 'var(--bg)', padding: '4px', borderRadius: '12px', border: '1px solid var(--border)' }}>
-            {(['all', 'income', 'expense'] as const).map(t => {
+            {(['all', 'income', 'expense', 'transfer'] as const).map(t => {
               const isActive = typeFilter === t;
               const colors = {
                 all:     { bg: 'var(--primary)', text: 'white' },
                 income:  { bg: '#0D9469',         text: 'white' },
                 expense: { bg: '#D63A5A',          text: 'white' },
+                transfer:{ bg: '#8B5CF6',         text: 'white' },
               };
+              const labelMap: any = { all: 'Tất cả', income: '↑ Thu', expense: '↓ Chi', transfer: '⇄ Chuyển' };
               return (
                 <button key={t} onClick={() => setTypeFilter(t)} style={{
                   padding: '5px 14px',
@@ -232,7 +267,7 @@ export default function TransactionsPage() {
                   color: isActive ? colors[t].text : 'var(--text-muted)',
                   boxShadow: isActive ? '0 2px 8px rgba(0,0,0,0.15)' : 'none',
                 }}>
-                  {t === 'all' ? 'Tất cả' : t === 'income' ? '↑ Thu nhập' : '↓ Chi tiêu'}
+                  {labelMap[t]}
                 </button>
               );
             })}
@@ -377,6 +412,9 @@ export default function TransactionsPage() {
                     const catColor = t.Category?.color || '#ccc';
                     const catIcon = t.Category?.icon || '📝';
                     const isIncome = t.type === 'income';
+                    const isTransfer = t.type === 'transfer';
+                    const walletName = t.Wallet?.name || '---';
+                    const transferWalletName = t.TransferWallet?.name || '---';
 
                     return (
                       <tr key={t.id}>
@@ -399,20 +437,32 @@ export default function TransactionsPage() {
                           <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: '4px' }}>
                             <CreditCard size={12} /> {t.paymentMethod}
                           </span>
+                          <div style={{ fontSize: '0.75rem', fontWeight: 600, marginTop: '4px', color: 'var(--text-primary)' }}>
+                            {isTransfer ? `${walletName} → ${transferWalletName}` : walletName}
+                          </div>
                         </td>
                         <td style={{ textAlign: 'right' }}>
-                          <span className="font-mono" style={{ fontWeight: 700, fontSize: '0.9rem', color: isIncome ? '#0D9469' : '#D63A5A' }}>
-                            {isIncome ? '+' : '-'}{formatCurrency(t.amount, true)}
+                          <span className="font-mono" style={{ fontWeight: 700, fontSize: '0.9rem', color: isIncome ? '#0D9469' : isTransfer ? '#8B5CF6' : '#D63A5A' }}>
+                            {isIncome ? '+' : isTransfer ? '⇄' : '-'}{formatCurrency(t.amount, true)}
                           </span>
                         </td>
                         <td style={{ textAlign: 'center' }}>
-                          <button 
-                            onClick={() => handleDelete(t.id)}
-                            style={{ background: 'none', border: 'none', cursor: 'pointer', opacity: 0.6 }}
-                            title="Xóa giao dịch"
-                          >
-                            <Trash2 size={16} color="var(--accent-red)" />
-                          </button>
+                          <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
+                            <button 
+                              onClick={() => openModal(t)}
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', opacity: 0.7 }}
+                              title="Sửa giao dịch"
+                            >
+                              <Edit3 size={16} color="var(--text-muted)" />
+                            </button>
+                            <button 
+                              onClick={() => handleDelete(t.id)}
+                              style={{ background: 'none', border: 'none', cursor: 'pointer', opacity: 0.7 }}
+                              title="Xóa giao dịch"
+                            >
+                              <Trash2 size={16} color="var(--accent-red)" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -463,7 +513,7 @@ export default function TransactionsPage() {
         <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowModal(false)}>
           <div className="modal">
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
-              <h2 style={{ fontFamily: 'Poppins', fontSize: '1.25rem', fontWeight: 700 }}>Thêm Giao Dịch</h2>
+              <h2 style={{ fontFamily: 'Poppins', fontSize: '1.25rem', fontWeight: 700 }}>{editingId ? 'Sửa Giao Dịch' : 'Thêm Giao Dịch'}</h2>
               <button onClick={() => setShowModal(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '4px' }}>
                 <X size={22} />
               </button>
@@ -478,6 +528,9 @@ export default function TransactionsPage() {
                 <button className={`toggle-btn ${form.type === 'expense' ? 'active-expense' : ''}`} onClick={() => handleTypeToggle('expense')}>
                   💸 Khoản Chi
                 </button>
+                <button className={`toggle-btn ${form.type === 'transfer' ? 'active-transfer' : ''}`} onClick={() => handleTypeToggle('transfer')} style={{ background: form.type === 'transfer' ? '#8B5CF6' : '', color: form.type === 'transfer' ? 'white' : '' }}>
+                  ⇄ Chuyển Khoản
+                </button>
               </div>
             </div>
 
@@ -488,7 +541,7 @@ export default function TransactionsPage() {
               </div>
               <div className="input-group">
                 <label className="input-label">Số tiền (₫)</label>
-                <input className="input" type="number" placeholder="50000" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} />
+                <input className="input" type="number" min="0" placeholder="50000" value={form.amount} onChange={e => setForm({ ...form, amount: e.target.value })} />
               </div>
             </div>
 
@@ -496,14 +549,32 @@ export default function TransactionsPage() {
               <div className="input-group">
                 <label className="input-label">Danh mục</label>
                 <select className="input" value={form.categoryId} onChange={e => setForm({ ...form, categoryId: e.target.value })}>
-                  {categories.filter(c => c.type === form.type).length === 0 && <option value="" disabled>-- Chưa có danh mục --</option>}
-                  {categories.filter(c => c.type === form.type).map(c => <option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
+                  {(form.type === 'transfer' ? categories : categories.filter(c => c.type === form.type)).length === 0 && <option value="" disabled>-- Chưa có danh mục --</option>}
+                  {(form.type === 'transfer' ? categories : categories.filter(c => c.type === form.type)).map(c => <option key={c.id} value={c.id}>{c.icon} {c.name}</option>)}
                 </select>
               </div>
               <div className="input-group">
                 <label className="input-label">Ngày giao dịch</label>
                 <input className="input" type="date" value={form.date} onChange={e => setForm({ ...form, date: e.target.value })} />
               </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: form.type === 'transfer' ? '1fr 1fr' : '1fr', gap: '16px', marginBottom: '16px' }}>
+              <div className="input-group">
+                <label className="input-label">{form.type === 'transfer' ? 'Từ Ví (Nguồn)' : 'Từ Ví'}</label>
+                <select className="input" value={form.walletId} onChange={e => setForm({ ...form, walletId: e.target.value })}>
+                  {wallets.map(w => <option key={w.id} value={w.id}>{w.name} ({formatCurrency(w.balance, true)})</option>)}
+                </select>
+              </div>
+              {form.type === 'transfer' && (
+                <div className="input-group">
+                  <label className="input-label">Tới Ví (Đích)</label>
+                  <select className="input" value={form.transferWalletId} onChange={e => setForm({ ...form, transferWalletId: e.target.value })}>
+                    <option value="" disabled>-- Chọn ví đích --</option>
+                    {wallets.filter(w => w.id !== form.walletId).map(w => <option key={w.id} value={w.id}>{w.name} ({formatCurrency(w.balance, true)})</option>)}
+                  </select>
+                </div>
+              )}
             </div>
 
             <div className="input-group" style={{ marginBottom: '16px' }}>
@@ -521,7 +592,7 @@ export default function TransactionsPage() {
             <div style={{ display: 'flex', gap: '12px' }}>
               <button disabled={submitting} className="btn btn-ghost" style={{ flex: 1 }} onClick={() => setShowModal(false)}>Hủy</button>
               <button disabled={submitting} className="btn btn-primary" style={{ flex: 2, opacity: submitting ? 0.7 : 1 }} onClick={handleAddTransaction}>
-                {submitting ? <Loader2 className="animate-spin" size={16} /> : <Plus size={16} />} Lưu Giao Dịch
+                {submitting ? <Loader2 className="animate-spin" size={16} /> : (editingId ? <Edit3 size={16} /> : <Plus size={16} />)} Lưu Giao Dịch
               </button>
             </div>
           </div>

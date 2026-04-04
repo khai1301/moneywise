@@ -41,6 +41,8 @@ export default function AnalyticsPage() {
   const [categoryData, setCategoryData] = useState<any[]>([]);
   const [loadingMonthly, setLoadingMonthly] = useState(true);
   const [loadingCat, setLoadingCat] = useState(true);
+  const [cycleStart, setCycleStart] = useState('');
+  const [cycleEnd, setCycleEnd] = useState('');
 
   useEffect(() => {
     let cancelled = false;
@@ -55,7 +57,7 @@ export default function AnalyticsPage() {
   useEffect(() => {
     let cancelled = false;
     setLoadingCat(true);
-    api.get(`/analytics/categories?start=${year}-01-01&end=${year}-12-31`)
+    api.get(`/analytics/categories`)
       .then(res => {
         if (!cancelled) {
           const data = (res.data.data || []).map((c: any, i: number) => ({
@@ -63,6 +65,8 @@ export default function AnalyticsPage() {
             color: c.color || FALLBACK_COLORS[i % FALLBACK_COLORS.length],
           }));
           setCategoryData(data);
+          setCycleStart(res.data.start || '');
+          setCycleEnd(res.data.end || '');
         }
       })
       .catch(() => {})
@@ -135,7 +139,11 @@ export default function AnalyticsPage() {
         {/* Donut */}
         <div className="chart-card">
           <div className="chart-title">Chi tiêu theo Danh Mục</div>
-          <div className="chart-subtitle">Tổng chi phân loại cả năm {year}</div>
+          <div className="chart-subtitle">
+            {cycleStart && cycleEnd 
+              ? `Chu kỳ hiện tại: ${new Date(cycleStart).toLocaleDateString('vi-VN')} - ${new Date(cycleEnd).toLocaleDateString('vi-VN')}`
+              : `Tổng chi phân loại`}
+          </div>
           {loadingCat ? (
             <ChartLoader h={200} />
           ) : categoryData.length === 0 ? (

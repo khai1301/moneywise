@@ -4,11 +4,12 @@ import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   LayoutDashboard, ArrowLeftRight, Target, BarChart2,
-  DollarSign, LogOut, Settings, Bell, Tag
+  DollarSign, LogOut, Settings, Bell, Tag, Wallet
 } from 'lucide-react';
 
 const navItems: { href: string; label: string; icon: React.ElementType; badge?: string }[] = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { href: '/wallets', label: 'Wallets & Accounts', icon: Wallet },
   { href: '/transactions', label: 'Transactions', icon: ArrowLeftRight },
   { href: '/categories', label: 'Categories', icon: Tag },
   { href: '/budgets', label: 'Budgets & Goals', icon: Target },

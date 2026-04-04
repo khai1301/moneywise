@@ -12,7 +12,7 @@ export default function SettingsPage() {
   // Profile State
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [savingProfile, setSavingProfile] = useState(false);
-  const [profile, setProfile] = useState({ name: '', email: '' });
+  const [profile, setProfile] = useState({ name: '', email: '', financialCycleStart: 1 });
 
   // Password State
   const [savingPassword, setSavingPassword] = useState(false);
@@ -23,7 +23,11 @@ export default function SettingsPage() {
     setLoadingProfile(true);
     api.get('/users/profile')
       .then(res => {
-        if (!cancelled) setProfile({ name: res.data.data.name, email: res.data.data.email });
+        if (!cancelled) setProfile({ 
+          name: res.data.data.name, 
+          email: res.data.data.email,
+          financialCycleStart: res.data.data.financialCycleStart || 1
+        });
       })
       .catch((err) => {
         if (err.response?.status === 401) router.push('/login');
@@ -38,7 +42,10 @@ export default function SettingsPage() {
     
     setSavingProfile(true);
     try {
-      await api.put('/users/profile', { name: profile.name });
+      await api.put('/users/profile', { 
+        name: profile.name,
+        financialCycleStart: Number(profile.financialCycleStart)
+      });
       alert('Cập nhật hồ sơ thành công!');
     } catch (err: any) {
       alert(err.response?.data?.error || 'Lỗi khi cập nhật hồ sơ');
@@ -136,6 +143,24 @@ export default function SettingsPage() {
                       placeholder="VD: Alex Nguyen"
                       required
                     />
+                  </div>
+                  
+                  <div className="input-group">
+                    <label className="input-label">Ngày bắt đầu chu kỳ tài chính (1-28)</label>
+                    <select
+                      className="input"
+                      value={profile.financialCycleStart}
+                      onChange={e => setProfile({ ...profile, financialCycleStart: Number(e.target.value) })}
+                      required
+                      style={{ padding: '10px 14px', borderRadius: '12px', border: '1.5px solid var(--border)', background: 'var(--bg)', color: 'var(--text-primary)', outline: 'none', transition: 'all 0.2s', fontSize: '0.9rem' }}
+                    >
+                      {Array.from({ length: 28 }, (_, i) => i + 1).map(day => (
+                        <option key={day} value={day}>Ngày {day} hàng tháng</option>
+                      ))}
+                    </select>
+                    <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', marginTop: '6px' }}>
+                      Các thống kê (Analytics) và Ngân sách sẽ bắt đầu tính từ ngày này.
+                    </p>
                   </div>
                   
                   <div className="input-group">

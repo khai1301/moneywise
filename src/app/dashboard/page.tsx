@@ -20,17 +20,13 @@ const DashboardCharts = dynamic(() => import('./charts'), {
 export default function DashboardPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
+  const [cycleStart, setCycleStart] = useState('');
+  const [cycleEnd, setCycleEnd] = useState('');
 
   const currentYear = new Date().getFullYear();
   const currentDate = new Date();
 
-  // Start of current month
-  const startOfMonth = new Date(currentYear, currentDate.getMonth(), 1);
-  const startStr = startOfMonth.toISOString().split('T')[0];
 
-  // End of current month
-  const endOfMonth = new Date(currentYear, currentDate.getMonth() + 1, 0);
-  const endStr = endOfMonth.toISOString().split('T')[0];
 
   const [data, setData] = useState({
     recentTxns: [],
@@ -46,10 +42,11 @@ export default function DashboardPage() {
       try {
         setLoading(true);
 
-        const [txnsRes, monthRes, catRes] = await Promise.all([
+        const [txnsRes, monthRes, catRes, walletsRes] = await Promise.all([
           api.get('/transactions?limit=5'),
           api.get(`/analytics/monthly?year=${currentYear}`),
-          api.get(`/analytics/categories?start=${startStr}&end=${endStr}`)
+          api.get(`/analytics/categories`),
+          api.get('/wallets')
         ]);
 
         if (cancelled) return;
@@ -63,8 +60,11 @@ export default function DashboardPage() {
 
         const income = cmData.income || 0;
         const expense = cmData.expense || 0;
-        const balance = income - expense;
         const savingsRate = income > 0 ? Math.round(((income - expense) / income) * 100) : 0;
+
+        // Calculate Net Worth from Wallets
+        const wallets = walletsRes.data.data || [];
+        const balance = wallets.reduce((sum: number, w: any) => sum + w.balance, 0);
 
         // Process category data
         const catData = (catRes.data.data || []).map((c: any, i: number) => {
@@ -84,6 +84,8 @@ export default function DashboardPage() {
           categoryData: catData,
           monthlyData: rawMonthly,
         });
+        setCycleStart(catRes.data.start || '');
+        setCycleEnd(catRes.data.end || '');
 
       } catch (err: any) {
         if (!cancelled) {
@@ -104,9 +106,9 @@ export default function DashboardPage() {
 
   const statCards = [
     {
-      label: 'Số dư tháng này', value: formatCurrency(data.summary.balance, true),
+      label: 'Tổng tài sản', value: formatCurrency(data.summary.balance, true),
       icon: Wallet, color: '#4BB3FD', bgColor: 'rgba(75,179,253,0.12)',
-      trend: 'Cập nhật', trendDir: data.summary.balance >= 0 ? 'up' : 'down', trendLabel: 'thêm',
+      trend: 'Net Worth', trendDir: data.summary.balance >= 0 ? 'up' : 'down', trendLabel: data.summary.balance >= 0 ? 'Dương' : 'Âm',
     },
     {
       label: 'Tổng thu nhập', value: formatCurrency(data.summary.income, true),
@@ -140,7 +142,11 @@ export default function DashboardPage() {
     <AppLayout>
       <div className="page-header">
         <h1 className="page-title">Dashboard</h1>
-        <p className="page-subtitle">Tổng quan tài chính tháng {currentDate.getMonth() + 1}/{currentDate.getFullYear()}</p>
+        <p className="page-subtitle">
+          {cycleStart && cycleEnd 
+            ? `Tổng quan chu kỳ: ${new Date(cycleStart).toLocaleDateString('vi-VN')} - ${new Date(cycleEnd).toLocaleDateString('vi-VN')}`
+            : `Tổng quan tài chính tháng ${currentDate.getMonth() + 1}/${currentDate.getFullYear()}`}
+        </p>
       </div>
 
       <div className="stats-grid">
@@ -197,6 +203,8 @@ export default function DashboardPage() {
               const catColor = t.Category?.color || '#ccc';
               const catIcon = t.Category?.icon || '📝';
               const isIncome = t.type === 'income';
+              const isTransfer = t.type === 'transfer';
+              const walletName = t.Wallet?.name || '---';
 
               return (
                 <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
@@ -214,15 +222,17 @@ export default function DashboardPage() {
                     <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
                       <span style={{ fontWeight: 600, color: catColor }}>{catName}</span>
                       <span style={{ margin: '0 6px', opacity: 0.5 }}>•</span>
+                      <span>{walletName}</span>
+                      <span style={{ margin: '0 6px', opacity: 0.5 }}>•</span>
                       <span>{new Date(t.date).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })}</span>
                     </div>
                   </div>
                   <div style={{
                     fontFamily: 'JetBrains Mono', fontWeight: 700,
                     fontSize: '0.9rem', flexShrink: 0,
-                    color: isIncome ? '#0D9469' : '#D63A5A'
+                    color: isIncome ? '#0D9469' : isTransfer ? '#8B5CF6' : '#D63A5A'
                   }}>
-                    {isIncome ? '+' : '-'}{formatCurrency(t.amount, true)}
+                    {isIncome ? '+' : isTransfer ? '⇄' : '-'}{formatCurrency(t.amount, true)}
                   </div>
                 </div>
               );
